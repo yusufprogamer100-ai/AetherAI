@@ -9,42 +9,68 @@ struct ModelsView: View {
         NavigationView {
             List {
                 // MARK: - CANLI İNDİRME BÖLÜMÜ
-                if llmEngine.downloader.progressInfo.isDownloading {
+                if llmEngine.downloader.progressInfo.isDownloading || !llmEngine.downloader.downloadQueue.isEmpty {
                     let info = llmEngine.downloader.progressInfo
-                    Section(header: Text("MODEL İNDİRİLİYOR")) {
+                    Section(header: Text("MODEL İNDİRME DURUMU")) {
                         VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                ProgressView()
-                                    .padding(.trailing, 4)
-                                Text("Model İndiriliyor...")
-                                    .font(.headline)
-                                Spacer()
-                                Text(String(format: "%.1f MB/s", info.speedMBps))
-                                    .font(.system(.subheadline, design: .monospaced))
-                                    .foregroundColor(.accentColor)
-                            }
+                            // Aktif İndirme
+                            if info.isDownloading {
+                                HStack {
+                                    ProgressView()
+                                        .padding(.trailing, 4)
+                                    Text("Model İndiriliyor...")
+                                        .font(.headline)
+                                    Spacer()
+                                    Text(String(format: "%.1f MB/s", info.speedMBps))
+                                        .font(.system(.subheadline, design: .monospaced))
+                                        .foregroundColor(.accentColor)
+                                }
 
-                            // Yüzde Çubuğu
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color(uiColor: .systemGray5))
-                                        .frame(height: 8)
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.accentColor)
-                                        .frame(width: geo.size.width * CGFloat(info.percentage / 100.0), height: 8)
+                                // Yüzde Çubuğu
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color(uiColor: .systemGray5))
+                                            .frame(height: 8)
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.accentColor)
+                                            .frame(width: geo.size.width * CGFloat(info.percentage / 100.0), height: 8)
+                                    }
+                                }
+                                .frame(height: 8)
+
+                                HStack {
+                                    Text(String(format: "%.1f MB / %.1f MB", info.downloadedMB, info.totalMB))
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(String(format: "%%%.1f", info.percentage))
+                                        .font(.system(.caption, design: .monospaced))
+                                        .fontWeight(.bold)
                                 }
                             }
-                            .frame(height: 8)
-
-                            HStack {
-                                Text(String(format: "%.1f MB / %.1f MB", info.downloadedMB, info.totalMB))
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                Text(String(format: "%%%.1f", info.percentage))
-                                    .font(.system(.caption, design: .monospaced))
-                                    .fontWeight(.bold)
+                            
+                            // Kuyruk Bilgisi
+                            if !llmEngine.downloader.downloadQueue.isEmpty {
+                                HStack {
+                                    Image(systemName: "list.bullet")
+                                        .foregroundColor(.orange)
+                                    Text("Kuyrukta \(llmEngine.downloader.downloadQueue.count) model bekliyor")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                ForEach(llmEngine.downloader.downloadQueue.prefix(3), id: \.id) { model in
+                                    HStack {
+                                        Circle()
+                                            .fill(Color.orange)
+                                            .frame(width: 6, height: 6)
+                                        Text(model.name)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.leading)
+                                }
                             }
 
                             HStack {
