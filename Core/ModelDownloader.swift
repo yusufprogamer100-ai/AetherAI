@@ -2,6 +2,8 @@ import Foundation
 
 class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
     @Published var progressInfo = DownloadProgressInfo()
+    @Published var downloadQueue: [LocalLLMModel] = []
+    @Published var isProcessingQueue = false
 
     private var downloadTask: URLSessionDownloadTask?
     private var session: URLSession?
@@ -9,6 +11,7 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var lastTime: Date = Date()
     private var currentModel: LocalLLMModel?
     private var onComplete: ((Bool) -> Void)?
+    private var queueCompletions: [String: (Bool) -> Void] = [:]
 
     override init() {
         super.init()
@@ -28,6 +31,14 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     func startDownload(model: LocalLLMModel, completion: @escaping (Bool) -> Void) {
+        // Queue'ya ekle
+        if progressInfo.isDownloading {
+            downloadQueue.append(model)
+            queueCompletions[model.id] = completion
+            addLog("📋 Model kuyruğa eklendi: \(model.name)")
+            return
+        }
+        
         guard let url = URL(string: model.downloadURL) else {
             addLog("❌ Hata: İndirme URL'i geçersiz.")
             completion(false)
@@ -55,6 +66,16 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
         downloadTask = session?.downloadTask(with: url)
         downloadTask?.resume()
+    }
+    
+    private func processNextInQueue() {
+        guard !downloadQueue.isEmpty else { return }
+        
+        let nextModel = downloadQueue.removeFirst()
+        let completion = queueCompletions.removeValue(forKey: nextModel.id) ?? { _ in }
+        
+        addLog("🔄 Sıradaki model indiriliyor: \(nextModel.name)")
+        startDownload(model: nextModel, completion: completion)
     }
 
     func cancelDownload() {
@@ -97,6 +118,7 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
             self.progressInfo.totalBytes = total
             self.progressInfo.speedMBps = currentSpeed
             self.progressInfo.percentage = min(max(percent, 0.0), 100.0)
+            self.objectWillChange.send()  // Force UI update
         }
 
         if totalBytesWritten % (1024 * 1024 * 5) == 0 {
@@ -144,6 +166,13 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
         DispatchQueue.main.async {
             self.progressInfo.isDownloading = false
             self.onComplete?(success)
+            
+            // Sıradaki modeli işle
+            if success && !self.downloadQueue.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.processNextInQueue()
+                }
+            }
         }
     }
 }
