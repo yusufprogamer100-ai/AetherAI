@@ -1,17 +1,52 @@
 import SwiftUI
 
+// MARK: - Yerel LLM Model Tanımı
+struct LocalLLMModel: Identifiable, Codable, Hashable {
+    let id: String
+    let name: String
+    let developer: String
+    let sizeMB: Double
+    let parameters: String
+    let downloadURL: String
+    let filename: String
+    let systemPromptFormat: String
+    var isDownloaded: Bool = false
+}
+
+// MARK: - Canlı İndirme Durumu
+struct DownloadProgressInfo {
+    var isDownloading: Bool = false
+    var modelId: String = ""
+    var downloadedBytes: Int64 = 0
+    var totalBytes: Int64 = 0
+    var speedMBps: Double = 0.0
+    var percentage: Double = 0.0
+    var logs: [String] = []
+    var errorMessage: String? = nil
+
+    var downloadedMB: Double {
+        Double(downloadedBytes) / (1024.0 * 1024.0)
+    }
+
+    var totalMB: Double {
+        Double(totalBytes) / (1024.0 * 1024.0)
+    }
+}
+
 // MARK: - Sohbet Mesajı
 struct ChatMessage: Identifiable, Codable {
     let id: UUID
     let text: String
     let isUser: Bool
     let timestamp: Date
+    let isWarning: Bool
 
-    init(id: UUID = UUID(), text: String, isUser: Bool, timestamp: Date = Date()) {
+    init(id: UUID = UUID(), text: String, isUser: Bool, timestamp: Date = Date(), isWarning: Bool = false) {
         self.id = id
         self.text = text
         self.isUser = isUser
         self.timestamp = timestamp
+        self.isWarning = isWarning
     }
 }
 

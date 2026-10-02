@@ -14,7 +14,7 @@ class AetherBrain: ObservableObject {
         self.llmEngine = llmEngine
 
         messages.append(ChatMessage(
-            text: "Merhaba! Ben Aether v3.2. 🧠\n\niPhone'unda %100 yerel (on-device) çalışan yapay zeka asistanınım. Hiçbir verin sunuculara gitmez.\n\nBana bir emrin var mı?",
+            text: "Merhaba! Ben Aether. 🧠\n\nSenin iPhone'unda %100 yerel (on-device) çalışan yerel yapay zeka asistanınım.\n\nEğer henüz bir yerel LLM modeli indirmediysen 'Modeller' sekmesinden ücretsiz modelleri cihazına indirebilirsin!",
             isUser: false
         ))
     }
@@ -23,11 +23,11 @@ class AetherBrain: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        // Kullanıcı mesajı
+        // Kullanıcı mesajı ekle
         messages.append(ChatMessage(text: trimmed, isUser: true))
         isThinking = true
 
-        // Otomatik Hafıza Analizi (Kişiler, Notlar, Tercihler)
+        // Otomatik Hafıza Analizi
         parseAndSaveMemories(trimmed)
 
         // Bağlam Hazırla
@@ -39,25 +39,18 @@ class AetherBrain: ObservableObject {
             }
         }
 
-        // Yerel LLM Çıkarımı Çalıştır
-        llmEngine.generate(
-            prompt: trimmed,
-            memoryContext: memoryContext,
-            history: messages,
-            onToken: { _ in },
-            onComplete: { [weak self] response in
-                guard let self = self else { return }
-                self.messages.append(ChatMessage(text: response, isUser: false))
-                self.isThinking = false
-                self.logManager.log(action: "LLM_INFERENCE", detail: trimmed, result: "BASARILI")
-            }
-        )
+        // Yerel LLM Çıkarımı Çağır
+        llmEngine.generate(prompt: trimmed, memoryContext: memoryContext, history: messages) { [weak self] response, isWarning in
+            guard let self = self else { return }
+            self.messages.append(ChatMessage(text: response, isUser: false, isWarning: isWarning))
+            self.isThinking = false
+            self.logManager.log(action: isWarning ? "MODEL_UYARI" : "LLM_INFERENCE", detail: trimmed, result: isWarning ? "MODEL_YOK" : "BASARILI")
+        }
     }
 
     private func parseAndSaveMemories(_ text: String) {
         let lower = text.lowercased()
 
-        // Kişi bilgisi
         let relations = [("Kardeş", ["kardeşim", "kardesim"]), ("Anne", ["annem"]), ("Baba", ["babam"]), ("Arkadaş", ["arkadaşım", "arkadasim"]), ("Sevgili", ["sevgilim"])]
         for (key, variants) in relations {
             if variants.contains(where: { lower.contains($0) }) {
@@ -69,16 +62,9 @@ class AetherBrain: ObservableObject {
             }
         }
 
-        // Hatırlatıcı / Not
         if lower.contains("hatırlat") || lower.contains("kaydet") || lower.contains("not al") {
             memoryManager.save(category: MemoryCategory.general.rawValue, key: "Not", value: text, importance: 0.7)
             logManager.log(action: "HAFIZA_NOT", detail: text, result: "BASARILI")
-        }
-
-        // Alarm
-        if lower.contains("alarm") {
-            memoryManager.save(category: MemoryCategory.routines.rawValue, key: "Alarm İsteği", value: text, importance: 0.8)
-            logManager.log(action: "HAFIZA_ALARM", detail: text, result: "BASARILI")
         }
     }
 }
