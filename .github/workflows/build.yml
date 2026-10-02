@@ -1,0 +1,47 @@
+name: Build AetherAI IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build AetherAI
+        run: |
+          set -e
+          SWIFT_FILES=$(find . -name '*.swift' -not -path './.build/*' | tr '\n' ' ')
+          echo "Derlenen dosyalar: $SWIFT_FILES"
+
+          xcrun swiftc \
+            $SWIFT_FILES \
+            -o AetherAI \
+            -target arm64-apple-ios16.0 \
+            -sdk $(xcrun --sdk iphoneos --show-sdk-path) \
+            -module-name AetherAI \
+            -parse-as-library \
+            -framework SwiftUI \
+            -framework Foundation
+
+          ls -la AetherAI
+          file AetherAI
+
+      - name: Package IPA
+        run: |
+          set -e
+          mkdir -p Payload/AetherAI.app
+          cp AetherAI Payload/AetherAI.app/AetherAI
+          cp Info.plist Payload/AetherAI.app/Info.plist
+          echo -n "APPL????" > Payload/AetherAI.app/PkgInfo
+          zip -r AetherAI.ipa Payload
+          ls -la AetherAI.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AetherAI-IPA
+          path: AetherAI.ipa
