@@ -6,187 +6,129 @@ struct ChatView: View {
     @EnvironmentObject var llmEngine: LocalLLMEngine
     @State private var inputText: String = ""
 
-    // Hızlı Komut Çipleri
-    let promptChips = [
+    let quickActions = [
         "👋 Merhaba",
-        "🧠 Ne biliyorsun?",
+        "🧠 Hafızamı göster",
         "⏰ Sabah 07:00 alarm kur",
         "📌 Not al: Toplantı var",
-        "📋 Logları göster"
+        "📋 Loglar"
     ]
 
     var body: some View {
-        ZStack {
-            // Arka Plan Gradyanı
-            LinearGradient(colors: theme.backgroundGradient, startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
+        NavigationView {
+            ZStack {
+                // Öz Hakiki iOS Sistem Arka Planı
+                Color(uiColor: .systemGroupedBackground)
+                    .ignoresSafeArea()
 
-            VStack(spacing: 0) {
+                VStack(spacing: 0) {
 
-                // MARK: - Üst Bar (Header)
-                HStack(spacing: 12) {
-                    ZStack {
+                    // MARK: - Aktif Model Durumu (Apple Header Style)
+                    HStack(spacing: 8) {
                         Circle()
-                            .fill(theme.accentColor.opacity(0.18))
-                            .frame(width: 44, height: 44)
+                            .fill(llmEngine.isModelLoaded ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
 
-                        Image(systemName: "brain.head.profile")
-                            .font(.system(size: 22))
-                            .foregroundColor(theme.accentColor)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text("Aether AI")
-                                .font(.system(size: 20, weight: .bold, design: .rounded))
-                                .foregroundColor(theme.textPrimary)
-
-                            Text("v3.2")
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(theme.accentColor.opacity(0.2))
-                                .foregroundColor(theme.accentColor)
-                                .cornerRadius(6)
+                        if llmEngine.isModelLoaded, let model = llmEngine.activeModel {
+                            Text("Aktif Yerel Model: \(model.name)")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("⚠️ Model Yüklü Değil (Modeller Sekmesinden İndirin)")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.orange)
                         }
-
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(llmEngine.isModelLoaded ? Color.green : Color.red)
-                                .frame(width: 6, height: 6)
-
-                            if llmEngine.isModelLoaded, let model = llmEngine.activeModel {
-                                Text("Yerel: \(model.name)")
-                                    .font(.caption2)
-                                    .foregroundColor(theme.textSecondary)
-                                    .lineLimit(1)
-                            } else {
-                                Text("MODEL SEÇİLMEDİ (Çevrimdışı)")
-                                    .font(.caption2)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.red)
-                            }
-                        }
-                    }
-
-                    Spacer()
-
-                    // Tema Değiştirici Buton
-                    Button(action: { theme.cycleTheme() }) {
-                        ZStack {
-                            Circle()
-                                .fill(theme.cardBackground)
-                                .frame(width: 38, height: 38)
-                            Image(systemName: "paintpalette.fill")
-                                .font(.system(size: 16))
-                                .foregroundColor(theme.accentColor)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-
-                Divider().background(Color.white.opacity(0.08))
-
-                // MARK: - Model Yok Uyarısı Banner'ı (Model indirilmeyince çıkar)
-                if !llmEngine.isModelLoaded {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text("Yerel yapay zeka modeli yüklü değil. 'Modeller' sekmesinden ücretsiz model indir.")
-                            .font(.caption)
-                            .foregroundColor(.white)
                         Spacer()
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Color.orange.opacity(0.2))
-                }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
 
-                // MARK: - Mesaj Listesi
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 14) {
-                            ForEach(brain.messages) { message in
-                                MessageBubbleView(message: message)
-                                    .id(message.id)
-                            }
+                    Divider()
 
-                            if brain.isThinking {
-                                HStack {
-                                    TypingIndicatorView()
-                                    Spacer()
+                    // MARK: - Mesaj Listesi
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                ForEach(brain.messages) { message in
+                                    NativeMessageBubble(message: message)
+                                        .id(message.id)
                                 }
-                                .padding(.horizontal, 16)
-                                .id("typing")
-                            }
-                        }
-                        .padding(.vertical, 14)
-                    }
-                    .onChange(of: brain.messages.count) { _ in
-                        withAnimation {
-                            if let last = brain.messages.last {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
-                    }
-                }
 
-                // MARK: - Hızlı Komut Çipleri
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(promptChips, id: \.self) { chip in
-                            Button(action: {
-                                inputText = chip.replacingOccurrences(of: "👋 ", with: "").replacingOccurrences(of: "🧠 ", with: "").replacingOccurrences(of: "⏰ ", with: "").replacingOccurrences(of: "📌 ", with: "").replacingOccurrences(of: "📋 ", with: "")
-                                sendMessage()
-                            }) {
-                                Text(chip)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(theme.textPrimary)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 7)
-                                    .background(theme.cardBackground)
-                                    .cornerRadius(16)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 16)
-                                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                                    )
+                                if brain.isThinking {
+                                    HStack {
+                                        NativeTypingBubble()
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .id("typing")
+                                }
+                            }
+                            .padding(.vertical, 12)
+                        }
+                        .onChange(of: brain.messages.count) { _ in
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                if let last = brain.messages.last {
+                                    proxy.scrollTo(last.id, anchor: .bottom)
+                                }
                             }
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                }
 
-                // MARK: - Giriş Alanı (Input Box)
-                HStack(spacing: 10) {
-                    TextField("Aether'e bir emrin veya sorun var mı?...", text: $inputText)
+                    // MARK: - Hızlı Eylem Çipleri (Apple Capsule Style)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(quickActions, id: \.self) { chip in
+                                Button(action: {
+                                    let clean = chip.replacingOccurrences(of: "👋 ", with: "").replacingOccurrences(of: "🧠 ", with: "").replacingOccurrences(of: "⏰ ", with: "").replacingOccurrences(of: "📌 ", with: "").replacingOccurrences(of: "📋 ", with: "")
+                                    inputText = clean
+                                    sendMessage()
+                                }) {
+                                    Text(chip)
+                                        .font(.subheadline)
+                                        .foregroundColor(.primary)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                                        .clipShape(Capsule())
+                                        .shadow(color: Color.black.opacity(0.04), radius: 3, x: 0, y: 1)
+                                }
+                            }
+                        }
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(theme.inputBackground)
-                        .cornerRadius(24)
-                        .foregroundColor(theme.textPrimary)
-                        .submitLabel(.send)
-                        .onSubmit { sendMessage() }
-
-                    Button(action: { sendMessage() }) {
-                        ZStack {
-                            Circle()
-                                .fill(inputText.trimmingCharacters(in: .whitespaces).isEmpty ? Color.gray.opacity(0.25) : theme.accentColor)
-                                .frame(width: 44, height: 44)
-
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(.white)
-                        }
+                        .padding(.vertical, 8)
                     }
-                    .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    Divider()
+
+                    // MARK: - Giriş Alanı (iMessage Bar Style)
+                    HStack(spacing: 10) {
+                        TextField("Aether'e bir mesaj yaz...", text: $inputText)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground))
+                            .cornerRadius(20)
+                            .submitLabel(.send)
+                            .onSubmit { sendMessage() }
+
+                        Button(action: { sendMessage() }) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(inputText.trimmingCharacters(in: .whitespaces).isEmpty ? .secondary.opacity(0.4) : .accentColor)
+                        }
+                        .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color(uiColor: .systemBackground))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.black.opacity(0.4))
             }
+            .navigationTitle("Aether AI")
+            .navigationBarTitleDisplayMode(.inline)
         }
+        .navigationViewStyle(.stack)
     }
 
     private func sendMessage() {
@@ -197,54 +139,54 @@ struct ChatView: View {
     }
 }
 
-// MARK: - Şık Mesaj Baloncuğu
-struct MessageBubbleView: View {
+// MARK: - Orijinal iOS iMessage Tarzı Balon
+struct NativeMessageBubble: View {
     let message: ChatMessage
-    @EnvironmentObject var theme: AetherThemeManager
 
     var body: some View {
         HStack {
-            if message.isUser { Spacer(minLength: 50) }
+            if message.isUser { Spacer(minLength: 40) }
 
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
                 if message.isWarning {
-                    // UYARI MESAJI KARTI
-                    VStack(alignment: .leading, spacing: 8) {
+                    // UYARI KARTI
+                    VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
-                            Text("UYARI")
-                                .font(.system(size: 12, weight: .bold))
+                            Text("Sistem Uyarısı")
+                                .font(.headline)
                                 .foregroundColor(.orange)
                         }
                         Text(message.text)
-                            .font(.system(size: 14))
-                            .foregroundColor(.white)
+                            .font(.body)
+                            .foregroundColor(.primary)
                     }
                     .padding(14)
-                    .background(Color.red.opacity(0.2))
-                    .cornerRadius(18)
-                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.red.opacity(0.4), lineWidth: 1))
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
                 } else {
-                    // NORMAL MESAJ
+                    // NORMAL İMESSAGE MESAJI
                     Text(message.text)
-                        .font(.system(size: 15))
-                        .foregroundColor(.white)
+                        .font(.body)
+                        .foregroundColor(message.isUser ? .white : .primary)
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(message.isUser ? theme.userBubbleColor : theme.botBubbleColor)
-                        .cornerRadius(20)
+                        .padding(.vertical, 10)
+                        .background(message.isUser ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground))
+                        .cornerRadius(18)
+                        .shadow(color: Color.black.opacity(0.03), radius: 2, x: 0, y: 1)
                 }
 
                 Text(timeString(message.timestamp))
-                    .font(.system(size: 10))
-                    .foregroundColor(theme.textSecondary)
-                    .padding(.horizontal, 6)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 4)
             }
 
-            if !message.isUser { Spacer(minLength: 50) }
+            if !message.isUser { Spacer(minLength: 40) }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
     }
 
     private func timeString(_ date: Date) -> String {
@@ -252,23 +194,22 @@ struct MessageBubbleView: View {
     }
 }
 
-// MARK: - Yazıyor Göstergesi
-struct TypingIndicatorView: View {
+// MARK: - iOS Tarzı Üç Nokta Animasyonu
+struct NativeTypingBubble: View {
     @State private var dot1: Double = 0.3
     @State private var dot2: Double = 0.3
     @State private var dot3: Double = 0.3
-    @EnvironmentObject var theme: AetherThemeManager
 
     var body: some View {
-        HStack(spacing: 5) {
-            Circle().fill(theme.accentColor).frame(width: 8, height: 8).opacity(dot1)
-            Circle().fill(theme.accentColor).frame(width: 8, height: 8).opacity(dot2)
-            Circle().fill(theme.accentColor).frame(width: 8, height: 8).opacity(dot3)
+        HStack(spacing: 4) {
+            Circle().fill(Color.secondary).frame(width: 7, height: 7).opacity(dot1)
+            Circle().fill(Color.secondary).frame(width: 7, height: 7).opacity(dot2)
+            Circle().fill(Color.secondary).frame(width: 7, height: 7).opacity(dot3)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(theme.botBubbleColor)
-        .cornerRadius(20)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .cornerRadius(16)
         .onAppear {
             withAnimation(Animation.easeInOut(duration: 0.5).repeatForever()) { dot1 = 1.0 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {

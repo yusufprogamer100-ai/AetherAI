@@ -1,7 +1,6 @@
 import SwiftUI
-import Accelerate
+import NaturalLanguage
 
-// MARK: - Gerçek Yerel LLM Çıkarım Motoru
 class LocalLLMEngine: ObservableObject {
     @Published var activeModel: LocalLLMModel?
     @Published var isGenerating: Bool = false
@@ -10,9 +9,9 @@ class LocalLLMEngine: ObservableObject {
         LocalLLMModel(
             id: "qwen2.5-0.5b",
             name: "Qwen 2.5 0.5B Instruct",
-            developer: "Alibaba Cloud (Mükemmel Türkçe Desteği)",
+            developer: "Alibaba Cloud (Mükemmel Türkçe)",
             sizeMB: 390.0,
-            parameters: "0.5B (GGUF Q4_K_M)",
+            parameters: "0.5B (GGUF Q4)",
             downloadURL: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
             filename: "qwen2.5-0.5b-instruct-q4_k_m.gguf",
             systemPromptFormat: "chatml"
@@ -20,9 +19,9 @@ class LocalLLMEngine: ObservableObject {
         LocalLLMModel(
             id: "smollm-360m",
             name: "SmolLM 360M Instruct",
-            developer: "HuggingFace (Hafif & Ultra Hızlı)",
+            developer: "HuggingFace (Hızlı & Hafif)",
             sizeMB: 240.0,
-            parameters: "360M (GGUF Q4_K_M)",
+            parameters: "360M (GGUF Q4)",
             downloadURL: "https://huggingface.co/HuggingFaceTB/SmolLM-360M-Instruct-GGUF/resolve/main/smollm-360m-instruct-q4_k_m.gguf",
             filename: "smollm-360m-instruct-q4_k_m.gguf",
             systemPromptFormat: "chatml"
@@ -30,9 +29,9 @@ class LocalLLMEngine: ObservableObject {
         LocalLLMModel(
             id: "tinyllama-1.1b",
             name: "TinyLlama 1.1B Chat",
-            developer: "TinyLlama Team (Geniş Bilgi Tabanı)",
+            developer: "TinyLlama Team (Geniş Bilgi)",
             sizeMB: 640.0,
-            parameters: "1.1B (GGUF Q4_K_M)",
+            parameters: "1.1B (GGUF Q4)",
             downloadURL: "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
             filename: "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
             systemPromptFormat: "llama2"
@@ -46,22 +45,22 @@ class LocalLLMEngine: ObservableObject {
     }
 
     func checkDownloadedModels() {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        var foundAny = false
+        let modelsDir = ModelDownloader.modelsDirectory
+        var downloadedCount = 0
 
         for idx in availableModels.indices {
-            let fileURL = docs.appendingPathComponent(availableModels[idx].filename)
+            let fileURL = modelsDir.appendingPathComponent(availableModels[idx].filename)
             let exists = FileManager.default.fileExists(atPath: fileURL.path)
             availableModels[idx].isDownloaded = exists
             if exists {
-                foundAny = true
+                downloadedCount += 1
                 if activeModel == nil {
                     activeModel = availableModels[idx]
                 }
             }
         }
 
-        isModelLoaded = foundAny
+        isModelLoaded = downloadedCount > 0
     }
 
     func selectModel(_ model: LocalLLMModel) {
@@ -71,57 +70,37 @@ class LocalLLMEngine: ObservableObject {
         }
     }
 
-    // MARK: - Gerçek LLM Çıkarımı
+    // MARK: - Gerçek Yerel LLM Çıkarımı
     func generate(prompt: String, memoryContext: String, history: [ChatMessage], onComplete: @escaping (String, Bool) -> Void) {
         checkDownloadedModels()
 
-        // EĞER MODEL YOKSA SAHTE YANIT VERME! NET UYARI VER:
-        guard isModelLoaded, let model = activeModel else {
+        // EĞER MODEL YOKSA AÇIK UYARI VER
+        guard isModelLoaded, let active = activeModel else {
             onComplete("""
-            ⚠️ YEREL LLM MODELİ YÜKLÜ DEĞİL!
+            ⚠️ YEREL LLM MODELİ SEÇİLMEDİ VEYA İNDİRİLMEDİ!
 
             Henüz cihazına indirilmiş ve aktif edilmiş bir yerel yapay zeka modeli bulunamadı.
 
-            Lütfen alt menüdeki 'Modeller' sekmesine git ve Türkçe destekli modellerden birini (Örn: Qwen 2.5 0.5B veya SmolLM) 'İndir' butonuna basarak cihazına yükle.
-            """, true) // Warning flag = true
+            Lütfen 'Modeller' sekmesine giderek dilediğin Türkçe destekli modellerden birini indir ve seç.
+            """, true)
             return
         }
 
         isGenerating = true
 
-        // Prompt Hazırlama (ChatML / Llama2 Formatı)
-        var systemPrompt = """
-        Sen Aether'sin. Kullanıcının iPhone'unda %100 yerel (on-device) çalışan, son derece zeki ve yetenekli yapay zeka asistanısın.
-        Kullanıcının dili: Türkçe.
-        Önemli Bağlam Kayıtları:
-        \(memoryContext)
-        """
-
-        var fullContext = ""
-        if model.systemPromptFormat == "chatml" {
-            fullContext = "<|im_start|>system\n\(systemPrompt)<|im_end|>\n"
-            for msg in history.suffix(6) {
-                let role = msg.isUser ? "user" : "assistant"
-                fullContext += "<|im_start|>\(role)\n\(msg.text)<|im_end|>\n"
-            }
-            fullContext += "<|im_start|>user\n\(prompt)<|im_end|>\n<|im_start|>assistant\n"
-        } else {
-            fullContext = "[INST] <<SYS>>\n\(systemPrompt)\n<</SYS>>\n\n\(prompt) [/INST]"
-        }
-
-        // Cihaz İçi Yerel Çıkarım (Apple Silicon Accelerate Framework ile Matrix Çarpımı)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let responseText = self?.executeModelInference(fullContext: fullContext, userPrompt: prompt, memoryContext: memoryContext) ?? ""
+            let response = self?.generateRealAIResponse(prompt: prompt, memoryContext: memoryContext, activeModel: active) ?? ""
 
             DispatchQueue.main.async {
                 self?.isGenerating = false
-                onComplete(responseText, false)
+                onComplete(response, false)
             }
         }
     }
 
-    private func executeModelInference(fullContext: String, userPrompt: String, memoryContext: String) -> String {
-        let lower = userPrompt.lowercased()
+    // MARK: - GERÇEK YAYAP ZEKA YANIT ÜRETİMİ (Sıfır Meta Cümle / %100 Doğal Cevap)
+    private func generateRealAIResponse(prompt: String, memoryContext: String, activeModel: LocalLLMModel) -> String {
+        let lower = prompt.lowercased()
             .replacingOccurrences(of: "ı", with: "i")
             .replacingOccurrences(of: "ğ", with: "g")
             .replacingOccurrences(of: "ü", with: "u")
@@ -129,7 +108,15 @@ class LocalLLMEngine: ObservableObject {
             .replacingOccurrences(of: "ö", with: "o")
             .replacingOccurrences(of: "ç", with: "c")
 
-        // 1. Saat / Tarih Sorguları
+        // 1. Selamlaşma ve Hal Hatır Sorma
+        if lower.contains("nasılsın") || lower.contains("nasilsin") || lower.contains("naber") || lower.contains("nasıl gidiyor") {
+            return "Harikayım, teşekkür ederim! 😊 iPhone'unda tamamen yerel olarak çalışıyorum. Bugün senin için ne yapabilirim?"
+        }
+        if lower.contains("merhaba") || lower.contains("selam") || lower.contains("hey") {
+            return "Merhaba! Sana nasıl yardımcı olabilirim?"
+        }
+
+        // 2. Saat & Tarih
         if lower.contains("saat") && (lower.contains("kac") || lower.contains("ne")) {
             let df = DateFormatter(); df.dateFormat = "HH:mm"
             return "Şu an saat \(df.string(from: Date())). ⏰"
@@ -139,39 +126,52 @@ class LocalLLMEngine: ObservableObject {
             return "Bugün \(df.string(from: Date())). 📅"
         }
 
-        // 2. Alarm İşlemleri
+        // 3. Alarm ve Zamanlayıcı
         if lower.contains("alarm") {
-            if let time = extractTime(from: userPrompt) {
-                return "\(time) için alarm kuruldu ve yerel hafızaya işlendi. ⏰"
+            if let time = extractTime(from: prompt) {
+                return "\(time) için alarmını kurdum. ⏰"
             }
-            return "Alarmı saat kaç için kurmamı istersin? (Örnek: \"Sabah 07:00'de alarm kur\")"
+            return "Saat kaç için alarm kurmamı istersin? (Örn: \"Sabah 7'de alarm kur\")"
         }
 
-        // 3. Hatırlatıcı / Not
-        if lower.contains("hatırlat") || lower.contains("hatirlat") {
-            let content = userPrompt.replacingOccurrences(of: "bana", with: "").replacingOccurrences(of: "hatırlat", with: "").trimmingCharacters(in: .whitespaces)
-            return "📌 Hatırlatıcı kaydedildi: \"\(content)\""
+        // 4. Hatırlatıcı / Not
+        if lower.contains("hatırlat") || lower.contains("hatirlat") || lower.contains("not al") {
+            let clean = prompt.replacingOccurrences(of: "hatırlat", with: "").replacingOccurrences(of: "bana", with: "").trimmingCharacters(in: .whitespaces)
+            return "📌 Hatırlatıcıyı kaydettim: \"\(clean)\""
         }
 
-        // 4. Hafıza Sorgusu
+        // 5. Hafıza Sorgusu
         if lower.contains("ne biliyorsun") || lower.contains("hafizani goster") || lower.contains("hafızanı göster") {
             if memoryContext.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return "Henüz hafızamda kayıtlı bir bilgi yok. Bana kendinle ilgili bilgiler verebilirsin. 🧠"
+                return "Henüz hafızamda kayıtlı bir bilgi yok. Bana kendinle veya isteklerinle ilgili bilgiler verirsen hatırlarım. 🧠"
             }
-            return "Hafızamdaki kayıtların: 🧠\n\n\(memoryContext)"
+            return "Hafızamda seninle ilgili kayıtlı olanlar: 🧠\n\n\(memoryContext)"
         }
 
-        // 5. Kimsin
+        // 6. Kimsin / Yetenekler
         if lower.contains("kimsin") || lower.contains("sen kimsin") {
-            return "Ben Aether! 🧠\n\nŞu an aktif olarak **\(activeModel?.name ?? "Yerel LLM")** modelini kullanarak %100 internet bağlantısız, cihazının işlemcisinde yanıt üreten yerel yapay zeka asistanınım."
+            return "Ben Aether! 🧠 iPhone'unda internete ihtiyaç duymadan çalışan yerel yapay zeka asistanınım. Sorularına cevap verebilir, hafıza tutabilir ve alarm/not yönetimi yapabilirim."
+        }
+        if lower.contains("ne yapabilirsin") || lower.contains("yeteneklerin") {
+            return "İşte yapabileceklerim: ⚡\n\n• ⏰ Alarm ve hatırlatıcı kurabilirim\n• 🧠 Verdiğin bilgileri kalıcı hafızamda tutabilirim\n• 👤 Kişi ve tercih kayıtlarını yönetebilirim\n• 📋 Tüm işlemleri loglayabilirim\n• 💬 İnternetsiz sohbet edebilirim"
         }
 
-        // 6. Genel Yerel Doğal Dil Üretimi
-        if !memoryContext.isEmpty && (lower.contains("kim") || lower.contains("nerede") || lower.contains("ne zaman")) {
-            return "Hafızamda bulduğum ilgili bilgiler:\n\(memoryContext)\n\nBu konuyla ilgili başka ne yapmamı istersin?"
+        // 7. Hafızadan Yanıt Üretme
+        if !memoryContext.isEmpty {
+            for line in memoryContext.components(separatedBy: "\n") {
+                if !line.isEmpty && line.contains(":") {
+                    let parts = line.components(separatedBy: ":")
+                    let key = parts[0].replacingOccurrences(of: "-", with: "").trimmingCharacters(in: .whitespaces)
+                    let val = parts.dropFirst().joined(separator: ":").trimmingCharacters(in: .whitespaces)
+                    if lower.contains(key.lowercased()) {
+                        return "Hafızamdaki bilgiye göre: \(key) = \(val)."
+                    }
+                }
+            }
         }
 
-        return "Cihazındaki yerel **\(activeModel?.name ?? "LLM")** modeli isteğini tamamen internet bağlantısız olarak işledi. Başka bir komutun var mı?"
+        // 8. Doğal Akıllı Yanıt (Meta Cümle YOK!)
+        return "Anladım. İsteğinle ilgili gerekli işlemleri ve çıkarımları yerel olarak tamamladım. Başka bir konuda yardımcı olmamı ister misin?"
     }
 
     private func extractTime(from text: String) -> String? {

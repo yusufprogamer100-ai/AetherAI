@@ -18,9 +18,18 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
         self.session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue.main)
     }
 
+    static var modelsDirectory: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let modelsDir = docs.appendingPathComponent("models", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: modelsDir.path) {
+            try? FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        }
+        return modelsDir
+    }
+
     func startDownload(model: LocalLLMModel, completion: @escaping (Bool) -> Void) {
         guard let url = URL(string: model.downloadURL) else {
-            addLog("❌ Hata: Geçersiz İndirme Bağlantısı URL'i!")
+            addLog("❌ Hata: İndirme URL'i geçersiz.")
             completion(false)
             return
         }
@@ -41,8 +50,8 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
             errorMessage: nil
         )
 
-        addLog("🌐 [HTTP] HuggingFace sunucusuna bağlantı isteği gönderiliyor...")
-        addLog("🔗 URL: \(model.downloadURL)")
+        addLog("🌐 HuggingFace sunucusuna bağlanılıyor...")
+        addLog("📦 Model: \(model.name) (\(model.parameters))")
 
         downloadTask = session?.downloadTask(with: url)
         downloadTask?.resume()
@@ -51,7 +60,7 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func cancelDownload() {
         downloadTask?.cancel()
         progressInfo.isDownloading = false
-        addLog("🛑 İndirme kullanıcı tarafından iptal edildi.")
+        addLog("🛑 İndirme iptal edildi.")
         onComplete?(false)
     }
 
@@ -60,7 +69,7 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let formatted = "[\(timestamp)] \(text)"
         DispatchQueue.main.async {
             self.progressInfo.logs.append(formatted)
-            if self.progressInfo.logs.count > 100 {
+            if self.progressInfo.logs.count > 80 {
                 self.progressInfo.logs.removeFirst()
             }
         }
@@ -73,7 +82,7 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let timeDiff = now.timeIntervalSince(lastTime)
 
         var currentSpeed = progressInfo.speedMBps
-        if timeDiff >= 0.5 {
+        if timeDiff >= 0.4 {
             let bytesDiff = totalBytesWritten - lastBytes
             currentSpeed = (Double(bytesDiff) / (1024.0 * 1024.0)) / timeDiff
             lastBytes = totalBytesWritten
@@ -90,46 +99,30 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
             self.progressInfo.percentage = min(max(percent, 0.0), 100.0)
         }
 
-        if totalBytesWritten % (1024 * 1024 * 10) == 0 || totalBytesWritten == bytesWritten {
+        if totalBytesWritten % (1024 * 1024 * 5) == 0 {
             let writtenMB = String(format: "%.1f", Double(totalBytesWritten) / (1024.0 * 1024.0))
             let totalMB = String(format: "%.1f", Double(total) / (1024.0 * 1024.0))
             let speedStr = String(format: "%.2f", currentSpeed)
-            addLog("⚡ [STREAM] İndiriliyor: \(writtenMB) MB / \(totalMB) MB (%\(Int(percent))) @ \(speedStr) MB/s")
+            addLog("⚡ İndiriliyor: \(writtenMB) MB / \(totalMB) MB (%\(Int(percent))) @ \(speedStr) MB/s")
         }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        addLog("✅ [STREAM] GGUF model dosyası tamamlandı. Yerel disk alanına yazılıyor...")
+        addLog("✅ Model indirildi. Yerel depolama alanına kuruluyor...")
 
         guard let model = currentModel else {
-            addLog("❌ Hata: Model bilgisi kayıp.")
             finish(success: false)
             return
         }
 
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let destination = docs.appendingPathComponent(model.filename)
+        let destination = ModelDownloader.modelsDirectory.appendingPathComponent(model.filename)
 
         do {
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
-                addLog("🗑️ Eski model dosyası temizlendi.")
             }
             try FileManager.default.moveItem(at: location, to: destination)
-            addLog("📁 Model başarıyla kaydedildi: \(destination.lastPathComponent)")
-
-            // GGUF Magic Header Doğrulama (GGUF dosyası gerçekten geçerli mi?)
-            if let handle = try? FileHandle(forReadingFrom: destination) {
-                let headerData = handle.readData(ofLength: 4)
-                handle.closeFile()
-                if let headerStr = String(data: headerData, encoding: .ascii), headerStr == "GGUF" {
-                    addLog("🔍 [VERIFY] GGUF Sihirli Başlık Doğrulandı: 'GGUF' (Model Geçerli)")
-                } else {
-                    addLog("⚠️ [VERIFY] Uyarı: GGUF başlığı okunamadı ama dosya yazıldı.")
-                }
-            }
-
-            addLog("🎉 İndirme ve kurulum başarıyla tamamlandı!")
+            addLog("🎉 Model başarıyla yüklendi: \(model.name)")
             finish(success: true)
         } catch {
             addLog("❌ Dosya kaydetme hatası: \(error.localizedDescription)")
@@ -139,7 +132,7 @@ class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
-            addLog("❌ [HTTP ERROR] Bağlantı Hatası: \(error.localizedDescription)")
+            addLog("❌ İndirme Hatası: \(error.localizedDescription)")
             DispatchQueue.main.async {
                 self.progressInfo.errorMessage = error.localizedDescription
             }
